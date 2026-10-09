@@ -263,6 +263,39 @@ def test_start_scraping_process(monkeypatch):
     assert db.pages[0][0] == 'http://example.com/page'
 
 
+def test_start_scraping_retries_connection_errors(monkeypatch):
+    db = ListDB()
+    scraper = Scraper(
+        base_url='http://example.com',
+        exclude_patterns=[],
+        include_url_patterns=[],
+        db_manager=db,
+    )
+
+    monkeypatch.setattr(Scraper, 'fetch_links', lambda self, url, html=None: set())
+    monkeypatch.setattr(
+        Scraper, 'scrape_page', lambda self, html, url: ('# MD', {'url': url})
+    )
+
+    class DummyResp:
+        status_code = 200
+        headers = {'content-type': 'text/html'}
+        text = '<html></html>'
+
+    get = MagicMock(side_effect=[requests.ConnectionError(), DummyResp()])
+    monkeypatch.setattr(scraper.session, 'get', get)
+    monkeypatch.setattr('crawler_to_md.scraper.time.sleep', lambda seconds: None)
+    monkeypatch.setattr(
+        tqdm, 'tqdm', lambda *a, **k: MagicMock(total=k.get('total', 0))
+    )
+
+    scraper.start_scraping(url='http://example.com/page')
+
+    assert get.call_count == 2
+    assert db.get_visited_links_count() == 1
+    assert db.pages[0][0] == 'http://example.com/page'
+
+
 def test_scraper_proxy_initialization(monkeypatch):
     db = DummyDB()
     monkeypatch.setattr(Scraper, '_test_proxy', lambda self: None)

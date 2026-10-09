@@ -142,6 +142,11 @@ class DatabaseManager:
             cursor = self.conn.execute("SELECT url, content, metadata FROM pages")
             return cursor.fetchall()
 
+    def iter_pages(self):
+        """Yield pages one at a time without loading the entire table."""
+        cursor = self.conn.execute("SELECT url, content, metadata FROM pages")
+        yield from cursor
+
     def __del__(self):
         """
         Close the database connection when the object is deleted.

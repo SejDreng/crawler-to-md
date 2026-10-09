@@ -97,6 +97,20 @@ class ExportManager:
 
         return final_content
 
+    def _format_page_markdown(self, url, content, metadata):
+        filtered_metadata = {
+            k: v for k, v in json.loads(metadata).items() if v is not None
+        }
+        metadata_content = "<!--\n"
+        metadata_content += f"URL: {url}\n"
+        for key, value in filtered_metadata.items():
+            metadata_content += f"{key}: {value}\n"
+        metadata_content += "-->"
+        adjusted_content = self._adjust_headers(content)
+        return self._cleanup_markdown(
+            "\n" + metadata_content + "\n\n" + adjusted_content + "\n---"
+        )
+
     def export_to_markdown(self, output_path):
         """
         Export the pages to a markdown file.
@@ -104,9 +118,11 @@ class ExportManager:
         Args:
             output_path (str): The path to the output markdown file.
         """
-        pages = self.db_manager.get_all_pages()
         with open(output_path, "w", encoding="utf-8") as md_file:
-            md_file.write(self._concatenate_markdown(pages))
+            md_file.write(f"# {self.title}\n")
+            for url, content, metadata in self.db_manager.iter_pages():
+                if content is not None:
+                    md_file.write(self._format_page_markdown(url, content, metadata))
         logger.info(f"Exported pages to markdown file: {output_path}")
 
     def export_to_json(self, output_path):
@@ -116,11 +132,10 @@ class ExportManager:
         Args:
             output_path (str): The path to the output JSON file.
         """
-        pages = self.db_manager.get_all_pages()
         with open(output_path, "w", encoding="utf-8") as json_file:
-            # Filter metadata and strip null values
-            data_to_export = []
-            for url, content, metadata in pages:
+            json_file.write("[\n")
+            first_page = True
+            for url, content, metadata in self.db_manager.iter_pages():
                 if content is None:
                     continue  # Skip empty pages
 
@@ -129,10 +144,21 @@ class ExportManager:
                 filtered_metadata = {
                     k: v for k, v in json.loads(metadata).items() if v is not None
                 }
-                data_to_export.append(
-                    {"url": url, "content": content, "metadata": filtered_metadata}
+                page = {
+                    "url": url,
+                    "content": content,
+                    "metadata": filtered_metadata,
+                }
+                if not first_page:
+                    json_file.write(",\n")
+                json.dump(
+                    page,
+                    json_file,
+                    ensure_ascii=False,
+                    indent=4,
                 )
-            json.dump(data_to_export, json_file, ensure_ascii=False, indent=4)
+                first_page = False
+            json_file.write("\n]\n")
             # Log the successful export to JSON file
             logger.info(f"Exported pages to JSON file: {output_path}")
 
@@ -144,13 +170,11 @@ class ExportManager:
             output_folder (str): The base output folder where the files will be saved.
             base_url (str or None): Base URL to remove for creating the path.
         """
-        pages = self.db_manager.get_all_pages()
         # Add 'files/' to the output folder and create it if it doesn't exist
         output_folder = os.path.join(output_folder, "files")
 
         os.makedirs(output_folder, exist_ok=True)
-        for page in pages:
-            url, content, metadata = page
+        for url, content, metadata in self.db_manager.iter_pages():
             logger.debug(f"Exporting individual Markdown for URL: {url}")
 
             # Remove base_url from parsed URL if provided

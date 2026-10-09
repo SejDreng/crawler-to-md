@@ -18,6 +18,8 @@ logger.name = "Scraper"
 
 
 class Scraper:
+    max_request_attempts = 3
+
     def __init__(
         self,
         base_url,
@@ -173,6 +175,30 @@ class Scraper:
             logger.error(f"Error fetching {url}: {e}")
             return []
 
+    def _get_with_retries(self, url):
+        """Fetch a URL, retrying transient request failures."""
+        for attempt in range(self.max_request_attempts):
+            try:
+                return self.session.get(url)
+            except requests.RequestException as exc:
+                if attempt == self.max_request_attempts - 1:
+                    logger.error(
+                        "Failed to fetch %s after %s attempts: %s",
+                        url,
+                        self.max_request_attempts,
+                        exc,
+                    )
+                    return None
+
+                retry_delay = attempt + 1
+                logger.warning(
+                    "Request failed for %s; retrying in %s second(s): %s",
+                    url,
+                    retry_delay,
+                    exc,
+                )
+                time.sleep(retry_delay)
+
     def scrape_page(self, html, url):
         """
         Scrape the content and metadata from the given URL.
@@ -324,10 +350,14 @@ class Scraper:
                 url = link[0]  # Extract the URL from the link tuple
 
                 # Attempt to fetch the page content
-                response = self.session.get(url)
+                response = self._get_with_retries(url)
 
                 # Increment request count for rate limiting
                 request_count += 1
+
+                if response is None:
+                    self.db_manager.mark_link_visited(url)
+                    continue
 
                 # Check for a successful response and correct content type
                 if response.status_code != 200 or not response.headers.get(

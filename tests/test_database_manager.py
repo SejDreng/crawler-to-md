@@ -35,3 +35,14 @@ def test_insert_link_duplicates_and_list():
     # total links should be 2
     assert db.get_links_count() == 2
     assert set(db.get_unvisited_links()) == {('http://a',), ('http://b',)}
+
+
+def test_iter_pages_yields_pages_incrementally():
+    db = DatabaseManager(':memory:')
+    db.insert_page('http://a', 'A', '{}')
+    db.insert_page('http://b', 'B', '{}')
+
+    assert list(db.iter_pages()) == [
+        ('http://a', 'A', '{}'),
+        ('http://b', 'B', '{}'),
+    ]
